@@ -313,7 +313,7 @@ using NoodleWithEpsilonsCounter = std::vector<SegmentWithEpsilonsCounter>;
  */
 void segs_one_initial_final(
     const std::vector<Nfa>& segments, bool include_empty, const State& unused_state,
-    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out);
+    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out, bool should_trim = true);
 
 /**
  * @brief Create noodles from segment automaton @p aut.
@@ -327,7 +327,7 @@ void segs_one_initial_final(
  * @param[in] include_empty Whether to also include empty noodles.
  * @return A list of all (non-empty) noodles.
  */
-std::vector<Noodle> noodlify(const SegNfa& aut, Symbol epsilon, bool include_empty = false);
+std::vector<Noodle> noodlify(const SegNfa& aut, Symbol epsilon, bool include_empty = false, bool should_trim = true);
 
 /**
  * @brief Create noodles from segment automaton @p aut.

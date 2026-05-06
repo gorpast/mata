@@ -4,6 +4,7 @@
 
 #include "mata/nfa/algorithms.hh"
 #include "mata/nfa/nfa.hh"
+#include "mata/nfa/colors.hh"
 
 using namespace mata::nfa;
 
@@ -12,6 +13,43 @@ namespace mata::nfa {
 Nfa concatenate(const Nfa& lhs, const Nfa& rhs, const bool use_epsilon,
                 StateRenaming* lhs_state_renaming, StateRenaming* rhs_state_renaming) {
     return algorithms::concatenate_eps(lhs, rhs, EPSILON, use_epsilon, lhs_state_renaming, rhs_state_renaming);
+}
+
+ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs) {
+    StateRenaming lhs_state_renaming;
+    StateRenaming rhs_state_renaming;
+
+    ColorsNfa cf = ColorsNfa(algorithms::concatenate_eps(lhs, rhs, EPSILON, true, &lhs_state_renaming, &rhs_state_renaming), ColorFormula());
+
+    //! again ignoring accepting formula for the small automaton
+    for (auto state_pair: lhs_state_renaming) {
+        cf.add_colors_to_state(state_pair.second, lhs.get_color_set(state_pair.first));
+    }
+
+    for (auto state_pair: rhs_state_renaming) {
+        cf.add_colors_to_state(state_pair.second, rhs.get_color_set(state_pair.first));
+    }
+
+    return cf;
+}
+
+ColorsNfa intersection(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol first_epsilon) {
+    std::unordered_map<std::pair<State, State>, State>  prod_map;
+    Nfa nfa = product(lhs, rhs, ProductFinalStateCondition::And, first_epsilon, &prod_map);
+
+    ColorsNfa cf = ColorsNfa(nfa, ColorFormula());
+
+    // map colors to product
+    for (auto state_map: prod_map) {
+        ColorSet cset = lhs.get_color_set(state_map.first.first);
+        ColorSet rset = rhs.get_color_set(state_map.first.second);
+
+        cset.insert(rset.begin(), rset.end());
+
+        cf.add_colors_to_state(state_map.second, cset);
+    }
+
+    return cf;
 }
 
 Nfa& Nfa::concatenate(const Nfa& aut) {
