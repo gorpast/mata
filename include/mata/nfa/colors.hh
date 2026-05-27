@@ -77,7 +77,7 @@ namespace mata::nfa
                 }
             }
 
-            std::string print_formula() {
+            std::string print_formula() const {
                 if (ops == OperatorType::True) {
                     return "true";
                 } else if (ops == OperatorType::False) {
@@ -106,6 +106,7 @@ namespace mata::nfa
                     if (std::find(active_colors.begin(), active_colors.end(), color_check) == active_colors.end()) {
                         return ColorFormula(OperatorType::False);
                     }
+                    return *this;
                 }
                 else if (ops == OperatorType::True) { return *this; }
                 else if (ops == OperatorType::False) { return *this; }
@@ -119,7 +120,9 @@ namespace mata::nfa
                         return *this;
                     }
                 } else if (ops == OperatorType::And) {
-                    assert(children.size() != 0);
+                    if (children.size() == 0) {
+                        return ColorFormula(OperatorType::False);
+                    }
                     for (int ind = 0; ind < children.size(); ind++) {
                         ColorFormula new_child = children[ind].trim_formula(active_colors);
                         if(new_child.ops == OperatorType::False) return ColorFormula(OperatorType::False);
@@ -127,7 +130,9 @@ namespace mata::nfa
                     }
                     return *this;
                 } else if (ops == OperatorType::Or) {
-                    assert(children.size() != 0);
+                    if (children.size() == 0) {
+                        return ColorFormula(OperatorType::False);
+                    }
                     for (int ind = 0; ind < children.size(); ind++) {
                         ColorFormula new_child = children[ind].trim_formula(active_colors);
                         if(new_child.ops == OperatorType::True) return ColorFormula(OperatorType::True);
@@ -192,6 +197,19 @@ namespace mata::nfa
 
             ColorSet get_color_set(State src) const {
                 return color_vector[src];
+            }
+
+            void resize_color_vector() {
+                color_vector.resize(this->num_of_states());
+            }
+            
+            bool has_colors() const {
+                for (auto color_set: color_vector) {
+                    if (color_set.size() != 0) {
+                        return true;
+                    }
+                }
+                return false;
             }
 
             ColorFormula get_accept_formula() const {
@@ -349,7 +367,7 @@ namespace mata::nfa
         }
 
         // printing to given format
-        std::string print_to_mata() {
+        std::string print_to_mata() const {
             std::string format_string = Nfa::print_to_mata();
             format_string += "Colors:\n"; // new line between automaton and its colors
             for (int ind = 0; ind < num_of_states(); ind++) {
@@ -367,8 +385,49 @@ namespace mata::nfa
             return format_string;
         }
 
-        // printing to given format
-        std::string print_to_dot() {
+        Nfa unwind_colors(State &color_state) const {
+
+            Nfa new_nfa = *this;
+
+            // ! now I create just one state and put different edges to different colors
+            color_state = new_nfa.add_state();
+
+            // when I find final state I have gave it a new color so it wont connect with other color states
+            // final states have implicit color 0
+            for (auto final_state : new_nfa.final) {
+                new_nfa.delta.add(final_state, EPSILON - 5, color_state);
+            }
+            // remove current final state - they already have color
+            new_nfa.final.clear();
+            new_nfa.final.insert(color_state);
+
+            // for (auto color_set : color_vector) {
+            //     for (auto color: color_set) {
+
+            //         if (std::find(found.begin(), found.end(), color) != found.end()) {
+            //             continue;
+            //         }
+
+            //         found.emplace(color);
+
+            //         (*color_state_mapping)[color] = new_nfa.add_state();
+
+            //         new_nfa.final.insert((*color_state_mapping)[color]);
+
+            //     }
+            // }
+            // for each color in state's color set add transition to new color state
+            for (unsigned ind = 0; ind < this->num_of_states(); ind++) {
+                for (auto color : color_vector[ind]) {
+                    State target = color_state; // well its state of "potential" color 0 + the true value of color
+                    new_nfa.delta.add(ind, EPSILON - 5 - color, target); //! dont know which epsilon to use
+                }
+            }
+
+            return new_nfa;
+        }
+
+        std::string print_to_dot() const {
             std::string format_string = Nfa::print_to_dot();
             format_string += "Colors:\n"; // new line between automaton and its colors
             for (int ind = 0; ind < num_of_states(); ind++) {
@@ -392,4 +451,7 @@ namespace mata::nfa
 
     ColorsNfa intersection(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol first_epsilon = EPSILON);
 
+    ColorsNfa colors_reduce_simulation(const ColorsNfa& aut, StateRenaming &state_renaming);
+
+    ColorsNfa reduce(const ColorsNfa &aut);
 }
