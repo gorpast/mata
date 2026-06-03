@@ -7,9 +7,11 @@
 #include "mata/applications/strings.hh"
 #include "mata/nfa/algorithms.hh"
 #include "mata/nfa/nfa.hh"
+#include "mata/nfa/colors.hh"
 #include "mata/nft/algorithms.hh"
 #include "mata/nft/builder.hh"
 #include "mata/utils/utils.hh"
+#include "mata/utils/sparse-set.hh"
 
 using namespace mata::applications::strings;
 
@@ -87,7 +89,201 @@ bool is_nft_homomorphic(const std::shared_ptr<Nft>& nft) {
 }
 } // namespace
 
-std::vector<seg_nfa::Noodle> seg_nfa::noodlify(const SegNfa& aut, const Symbol epsilon, const bool include_empty, bool should_trim) {
+std::vector<mata::nfa::ColorsNfa> get_segment_colors(std::vector<mata::nfa::Nfa> segments, mata::nfa::ColorsNfa &product) {
+    //!  I am working with the ASSUMPTION that the segment still inherit original state numbers from the product
+    std::vector<mata::nfa::ColorsNfa> color_segments = {};
+    for (size_t ind = 0; ind < segments.size(); ind++) {
+        mata::nfa::ColorsNfa cseg = mata::nfa::ColorsNfa(segments[ind], mata::nfa::ColorFormula());
+
+        cseg.inherit_colors(product);
+
+        color_segments.push_back(cseg);
+    }
+
+    return color_segments;
+}
+
+std::vector<mata::nfa::ColorsNfa> seg_nfa::colorful_noodlify(mata::nfa::ColorsNfa product_pres_eps_trans, mata::nfa::ColorFormula *cf, mata::nfa::ColorNum *base_num) {
+    // own segmentation of epsilon product
+    mata::applications::strings::seg_nfa::Segmentation segmentation{product_pres_eps_trans, { mata::nfa::EPSILON }};
+
+    //! will they have the same State names as the intial product automaton ???
+    const std::vector<mata::nfa::Nfa>& segments{ segmentation.get_untrimmed_segments() };
+
+    std::vector<mata::nfa::ColorsNfa> color_segments = get_segment_colors(segments, product_pres_eps_trans);
+
+    mata::nfa::ColorFormula new_disjunct = mata::nfa::ColorFormula(mata::nfa::ColorFormula::OperatorType::Or);
+
+    // ! now playing with noodlify
+    // TODO I need to get all noodles and then color the bubbles
+    // ! this is not an optimal version - should refactor
+
+    if (segments.size() == 1) {
+        if (auto segment{ color_segments[0] }; segment.num_of_states() > 0) {
+            return { { segment } };
+        } else { return {}; }
+     }
+
+    State unused_state = product_pres_eps_trans.num_of_states(); // get some State not used in aut
+    std::map<std::pair<State, State>, mata::nfa::StateRenaming> segments_renamings;
+    seg_nfa::color_segs_one_initial_final(color_segments, false, unused_state, segments_renamings);
+
+    const auto& epsilon_depths{ segmentation.get_epsilon_depths() };
+
+    // Compute number of all combinations of ε-transitions with one ε-transitions from each depth.
+    const size_t num_of_permutations{ get_num_of_permutations(epsilon_depths) };
+    const size_t epsilon_depths_size{ epsilon_depths.size() };
+
+    // noodle of epsilon transitions (each from different depth)
+    std::vector<Transition> epsilon_noodle(epsilon_depths_size);
+    // for each combination of ε-transitions, create the automaton.
+    // based on https://stackoverflow.com/questions/48270565/create-all-possible-combinations-of-multiple-vectors
+    for (size_t index{ 0 }; index < num_of_permutations; ++index) {
+        size_t temp{ index };
+        for (size_t depth{ 0 }; depth < epsilon_depths_size; ++depth) {
+            const size_t num_of_trans_at_cur_depth = epsilon_depths.at(depth).size();
+            const size_t computed_index = temp % num_of_trans_at_cur_depth;
+            temp /= num_of_trans_at_cur_depth;
+            epsilon_noodle[depth] = epsilon_depths.at(depth)[computed_index];
+        }
+
+        std::vector<mata::nfa::StateRenaming> renamings;
+
+        // epsilon_noodle[0] for sure exists, as we sorted out the case of only one segment at the beginning
+        if (auto first_segment_iter{
+                segments_renamings.find(
+                    std::make_pair(unused_state, epsilon_noodle[0].source)
+                )
+            };
+            first_segment_iter != segments_renamings.end()) {
+            renamings.push_back(first_segment_iter->second);
+        } else { continue; }
+
+        bool all_segments_exist = true;
+        for (auto iter = epsilon_noodle.begin(); iter + 1 != epsilon_noodle.end(); ++iter) {
+            const auto next_iter{ iter + 1 };
+            if (auto segment_iter = segments_renamings.find(std::make_pair(iter->target, next_iter->source));
+                segment_iter != segments_renamings.end()) { renamings.push_back(segment_iter->second); } else {
+                all_segments_exist = false;
+                break;
+            }
+        }
+
+        if (!all_segments_exist) { continue; }
+
+        auto last_segment_iter = segments_renamings.find(
+            std::make_pair(epsilon_noodle.back().target, unused_state)
+        );
+        if (last_segment_iter != segments_renamings.end()) {
+            renamings.push_back(last_segment_iter->second);
+        } else { continue; }
+
+
+        //! im running on assumption that noodle contains all segments and the only difference is that only a few epsilon transitions exists in the automaton
+        // now processing of noodle
+        mata::nfa::ColorFormula new_formula = mata::nfa::ColorFormula(mata::nfa::ColorFormula::OperatorType::And);
+        // TODO now I color the whole bubbles with given color - even the last one
+        // need to skip last segment
+        for (unsigned int ind = 0; ind < renamings.size(); ind++) {
+            // TODO assumption noodles and segments has the same ordering (noodles are not trimmed)
+            auto color = ++(*base_num);
+
+            //! how I expect that renamings work:
+            // I get the renaming of automaton after trimming and reducing
+            //the biggest assumption - there are only states(keys) that survived trim:reduce
+            // so than I can just color them
+            for (auto &pair: renamings[ind]) {
+                color_segments[ind].add_color_to_current(pair.first, {color});
+            }
+
+            new_formula.add_child(mata::nfa::ColorFormula(mata::nfa::ColorFormula::OperatorType::Occurs, color));
+
+        }
+
+        new_disjunct.add_child(new_formula);
+    }
+
+    // end of copying noodlify tot rework it
+    *cf = new_disjunct;
+
+    return color_segments;
+}
+
+mata::nfa::StateRenaming compose_renamings(mata::nfa::StateRenaming &sr1, mata::nfa::StateRenaming &sr2) {
+
+    mata::nfa::StateRenaming compose;
+    
+    for (const auto& [k, v]: sr1) {
+        auto it = sr2.find(v);
+        if (it != sr2.end()) {
+            compose[k] = it->second;
+        }
+    }
+
+    return compose;
+}
+
+// TODO completely redo this - this does work but its wierd
+void seg_nfa::color_segs_one_initial_final(
+    const std::vector<mata::nfa::ColorsNfa>& segments,
+    bool include_empty,
+    const State& unused_state,
+    std::map<std::pair<State, State>, mata::nfa::StateRenaming>& out) {
+
+    for (auto iter = segments.begin(); iter != segments.end(); ++iter) {
+        if (iter == segments.begin()) { // first segment will always have all initial states in noodles
+            for (const State final_state : iter->final) {
+                mata::nfa::StateRenaming reduce_renaming;
+                mata::nfa::StateRenaming trim_renaming;
+                if (mata::nfa::ColorsNfa segment_one_final = mata::nfa::reduce(mata::nfa::color_trim(
+                            *iter, &trim_renaming,
+                            std::nullopt,
+                            std::make_optional(utils::SparseSet<State>{ final_state })
+                        ), &reduce_renaming);
+                    segment_one_final.num_of_states() > 0 || include_empty) {
+
+                    auto x = compose_renamings(trim_renaming, reduce_renaming);
+                    out[std::make_pair(unused_state, final_state)] = compose_renamings(trim_renaming, reduce_renaming);
+                }
+            }
+        } else if (iter + 1 == segments.end()) { // last segment will always have all final states in noodles
+            for (const State init_state : iter->initial) {
+                mata::nfa::StateRenaming reduce_renaming;
+                mata::nfa::StateRenaming trim_renaming;
+                if (mata::nfa::ColorsNfa segment_one_init = mata::nfa::reduce(
+                        mata::nfa::color_trim(
+                            *iter, &trim_renaming,
+                            std::make_optional(utils::SparseSet<State>{ init_state }),
+                            std::nullopt
+                        ), &reduce_renaming
+                    );
+                    segment_one_init.num_of_states() > 0 || include_empty) {
+                    auto x = compose_renamings(trim_renaming, reduce_renaming);
+                    out[std::make_pair(init_state, unused_state)] = compose_renamings(trim_renaming, reduce_renaming);
+                }
+            }
+        } else { // the segments in-between
+            for (const State init_state : iter->initial) {
+                for (const State final_state : iter->final) {
+                    mata::nfa::StateRenaming reduce_renaming;
+                    mata::nfa::StateRenaming trim_renaming;
+                    if (mata::nfa::ColorsNfa segment_one_init_final = mata::nfa::reduce(
+                            mata::nfa::color_trim(
+                                *iter, &trim_renaming,
+                                std::make_optional(utils::SparseSet<State>{ init_state }),
+                                std::make_optional(utils::SparseSet<State>{ final_state })
+                            ), &reduce_renaming
+                        );
+                        segment_one_init_final.num_of_states() > 0 || include_empty) {
+                        out[std::make_pair(init_state, final_state)] = compose_renamings(trim_renaming, reduce_renaming);
+                    }
+                }
+            }
+        }
+    }
+}
+
+std::vector<seg_nfa::Noodle> seg_nfa::noodlify(const SegNfa& aut, const Symbol epsilon, const bool include_empty) {
     const std::set<Symbol> epsilons({ epsilon });
     // return noodlify_reach(aut, epsilons, include_empty);
 
@@ -95,21 +291,14 @@ std::vector<seg_nfa::Noodle> seg_nfa::noodlify(const SegNfa& aut, const Symbol e
     const auto& segments{ segmentation.get_untrimmed_segments() };
 
     if (segments.size() == 1) {
-        if (should_trim) {
-
-            if (auto segment{ std::make_shared<Nfa>(trim(segments[0])) }; segment->num_of_states() > 0 || include_empty) {
-                return { { segment } };
-            } else { return {}; }
-        } else {
-            if (auto segment{ std::make_shared<Nfa>(segments[0]) }; segment->num_of_states() > 0 || include_empty) {
-                return { { segment } };
-            } else { return {}; }
-        }
-    }
+        if (auto segment{ std::make_shared<Nfa>(trim(segments[0])) }; segment->num_of_states() > 0 || include_empty) {
+            return { { segment } };
+        } else { return {}; }
+     }
 
     State unused_state = aut.num_of_states(); // get some State not used in aut
     std::map<std::pair<State, State>, std::shared_ptr<Nfa>> segments_one_initial_final;
-    segs_one_initial_final(segments, include_empty, unused_state, segments_one_initial_final, should_trim);
+    segs_one_initial_final(segments, include_empty, unused_state, segments_one_initial_final);
 
     const auto& epsilon_depths{ segmentation.get_epsilon_depths() };
 
@@ -173,81 +362,49 @@ void seg_nfa::segs_one_initial_final(
     const std::vector<Nfa>& segments,
     bool include_empty,
     const State& unused_state,
-    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out,
-    bool should_trim) {
+    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out) {
     for (auto iter = segments.begin(); iter != segments.end(); ++iter) {
         if (iter == segments.begin()) { // first segment will always have all initial states in noodles
             for (const State final_state : iter->final) {
-                if (should_trim) {
-                    if (Nfa segment_one_final = reduce(
-                            trim(
-                                *iter, nullptr,
-                                std::nullopt,
-                                std::make_optional(utils::SparseSet<State>{ final_state })
-                            )
-                        );
-                        segment_one_final.num_of_states() > 0 || include_empty) {
-                        out[std::make_pair(unused_state, final_state)] = std::make_shared<
-                            Nfa>(std::move(segment_one_final));
-                    }
-                } else {
-
-                    if (Nfa segment_one_final = trim(*iter);
-                        segment_one_final.num_of_states() > 0 || include_empty) {
-                        segment_one_final.final = utils::SparseSet<State>{final_state};
-                        out[std::make_pair(unused_state, final_state)] = std::make_shared<
-                            Nfa>(std::move(trim(segment_one_final)));
-                    }
+                if (Nfa segment_one_final = reduce(
+                        trim(
+                            *iter, nullptr,
+                            std::nullopt,
+                            std::make_optional(utils::SparseSet<State>{ final_state })
+                        )
+                    );
+                    segment_one_final.num_of_states() > 0 || include_empty) {
+                    out[std::make_pair(unused_state, final_state)] = std::make_shared<
+                        Nfa>(std::move(segment_one_final));
                 }
             }
         } else if (iter + 1 == segments.end()) { // last segment will always have all final states in noodles
             for (const State init_state : iter->initial) {
-                if (should_trim) {
-                    if (Nfa segment_one_init = reduce(
-                            trim(
-                                *iter, nullptr,
-                                std::make_optional(utils::SparseSet<State>{ init_state }),
-                                std::nullopt
-                            )
-                        );
-                        segment_one_init.num_of_states() > 0 || include_empty) {
-                        out[std::make_pair(init_state, unused_state)] = std::make_shared<Nfa>(std::move(segment_one_init));
-                    }
-                } else {
-
-                    if (Nfa segment_one_init = trim(*iter);
-                        segment_one_init.num_of_states() > 0 || include_empty) {
-                        segment_one_init.initial = utils::SparseSet<State>{init_state};
-                        out[std::make_pair(init_state, unused_state)] = std::make_shared<Nfa>(std::move(trim(segment_one_init)));
-                    }
+                if (Nfa segment_one_init = reduce(
+                        trim(
+                            *iter, nullptr,
+                            std::make_optional(utils::SparseSet<State>{ init_state }),
+                            std::nullopt
+                        )
+                    );
+                    segment_one_init.num_of_states() > 0 || include_empty) {
+                    out[std::make_pair(init_state, unused_state)] = std::make_shared<Nfa>(std::move(segment_one_init));
                 }
             }
         } else { // the segments in-between
             for (const State init_state : iter->initial) {
                 for (const State final_state : iter->final) {
-                    if (should_trim) {
-
-                        if (Nfa segment_one_init_final = reduce(
-                                trim(
-                                    *iter, nullptr,
-                                    std::make_optional(utils::SparseSet<State>{ init_state }),
-                                    std::make_optional(utils::SparseSet<State>{ final_state })
-                                )
-                            );
-                            segment_one_init_final.num_of_states() > 0 || include_empty) {
-                            out[std::make_pair(init_state, final_state)] = std::make_shared<Nfa>(
-                                std::move(segment_one_init_final)
-                            );
-                        }
-                    } else {
-                        if (Nfa segment_one_init_final = trim(*iter);
-                            segment_one_init_final.num_of_states() > 0 || include_empty) {
-                            segment_one_init_final.final = utils::SparseSet<State>{final_state};
-                            segment_one_init_final.initial = utils::SparseSet<State>{init_state};
-                            out[std::make_pair(init_state, final_state)] = std::make_shared<Nfa>(
-                                std::move(trim(segment_one_init_final))
-                            );
-                        }
+                    if (Nfa segment_one_init_final = reduce(
+                            trim(
+                                *iter, nullptr,
+                                std::make_optional(utils::SparseSet<State>{ init_state }),
+                                std::make_optional(utils::SparseSet<State>{ final_state })
+                            )
+                        );
+                        segment_one_init_final.num_of_states() > 0 || include_empty) {
+                        out[std::make_pair(init_state, final_state)] = std::make_shared<Nfa>(
+                            std::move(segment_one_init_final)
+                        );
                     }
                 }
             }

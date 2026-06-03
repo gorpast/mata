@@ -52,12 +52,37 @@ namespace mata::nfa {
         return new_colors_nfa;
     }
 
-    ColorsNfa reduce(const ColorsNfa &aut) {
+    ColorsNfa reduce(const ColorsNfa &aut, StateRenaming *state_renaming) {
 
-        StateRenaming state_renaming;
+        StateRenaming sr;
+        if (state_renaming == nullptr) {
+            state_renaming = &sr;
+        }
 
-        ColorsNfa new_color_aut = colors_reduce_simulation(aut, state_renaming);
+        ColorsNfa new_color_aut = colors_reduce_simulation(aut, *state_renaming);
             
         return new_color_aut;
+    }
+
+    ColorsNfa color_trim(
+        const ColorsNfa& aut, StateRenaming* state_renaming,
+        std::optional<std::reference_wrapper<const utils::SparseSet<State>>> initial_states,
+        std::optional<std::reference_wrapper<const utils::SparseSet<State>>> final_states) {
+        if (!initial_states) { initial_states = aut.initial; }
+        if (!final_states) { final_states = aut.final; }
+
+        StateRenaming sr;
+        if (state_renaming == nullptr) {
+            state_renaming = &sr;
+        }
+
+        Nfa nfa = trim(aut, state_renaming, initial_states, final_states);
+        ColorsNfa new_colors = ColorsNfa(nfa, ColorFormula());
+
+        for (auto pair: sr) {
+            new_colors.add_color_to_current(pair.second, aut.get_color_set(pair.first));
+        }
+
+        return new_colors;
     }
 }

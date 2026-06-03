@@ -6,6 +6,7 @@
 #define MATA_STRING_SOLVING_HH_
 
 #include "mata/nfa/nfa.hh"
+#include "mata/nfa/colors.hh"
 #include "mata/nft/nft.hh"
 
 /**
@@ -313,7 +314,15 @@ using NoodleWithEpsilonsCounter = std::vector<SegmentWithEpsilonsCounter>;
  */
 void segs_one_initial_final(
     const std::vector<Nfa>& segments, bool include_empty, const State& unused_state,
-    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out, bool should_trim = true);
+    std::map<std::pair<State, State>, std::shared_ptr<Nfa>>& out);
+
+void color_segs_one_initial_final(
+    const std::vector<mata::nfa::ColorsNfa>& segments,
+    bool include_empty,
+    const State& unused_state,
+    std::map<std::pair<State, State>, mata::nfa::StateRenaming>& out);
+
+std::vector<mata::nfa::ColorsNfa> colorful_noodlify(mata::nfa::ColorsNfa product_pres_eps_trans, mata::nfa::ColorFormula *cf, mata::nfa::ColorNum *base_num);
 
 /**
  * @brief Create noodles from segment automaton @p aut.
@@ -327,7 +336,7 @@ void segs_one_initial_final(
  * @param[in] include_empty Whether to also include empty noodles.
  * @return A list of all (non-empty) noodles.
  */
-std::vector<Noodle> noodlify(const SegNfa& aut, Symbol epsilon, bool include_empty = false, bool should_trim = true);
+std::vector<Noodle> noodlify(const SegNfa& aut, Symbol epsilon, bool include_empty = false);
 
 /**
  * @brief Create noodles from segment automaton @p aut.

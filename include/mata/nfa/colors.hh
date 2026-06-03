@@ -1,11 +1,14 @@
 #pragma once
 
+#include <vector>
+#include <set>
+#include <optional>
+#include <functional>
+
 #include "delta.hh"
 #include "nfa.hh"
 #include "mata/utils/sparse-set.hh"
 #include "mata/utils/synchronized-iterator.hh"
-#include <vector>
-#include <set>
 
 namespace mata::nfa
 {
@@ -217,43 +220,42 @@ namespace mata::nfa
             }
 
             bool is_lang_empty(void) {
-                // TODO now I dont use is_lang_empty in the z3_noodler
-                return Nfa::is_lang_empty();
+                // setting callback for tarjan SCC
+                std::unordered_map<State, State> state_to_scc;
+                State current_scc = 0;
 
-                // // setting callback for tarjan SCC
-                // std::unordered_map<State, State> state_to_scc;
-                // State current_scc = 0;
+                TarjanDiscoverCallback cb;
 
-                // TarjanDiscoverCallback cb;
+                cb.scc_discover = [&](const std::vector<State>& scc,
+                                    const std::vector<State>& /*stack*/) {
+                    for (State s : scc) {
+                        state_to_scc[s] = current_scc;
+                    }
+                    current_scc++;
+                    return false;
+                };
 
-                // cb.scc_discover = [&](const std::vector<State>& scc,
-                //                     const std::vector<State>& /*stack*/) {
-                //     for (State s : scc) {
-                //         state_to_scc[s] = current_scc;
-                //     }
-                //     current_scc++;
-                //     return false;
-                // };
+                // state_to_scc should have mapping between SCCs and states of Nfa
+                tarjan_scc_discover(cb);
 
-                // // state_to_scc should have mapping between SCCs and states of Nfa
-                // tarjan_scc_discover(cb);
+                ColorsNfa graph = create_scc_graph(state_to_scc, current_scc);
 
-                // ColorsNfa graph = create_scc_graph(state_to_scc, current_scc);
+                // TODO probably good idea to connect all initial states
+                // get initial SCCs
+                std::set<State> initial_scc = get_initial_sccs(state_to_scc);
 
-                // // TODO probably good idea to connect all initial states
-                // // get initial SCCs
-                // std::set<State> initial_scc = get_initial_sccs(state_to_scc);
+                // start the algorithm
+                for (State init_scc: initial_scc) {
+                    ColorSet walk_colors = {};
 
-                // // start the algorithm
-                // for (State init_scc: initial_scc) {
-                //     ColorSet walk_colors = {};
+                    // take a walk - if found possible solution language is not empty
+                    if (expand(init_scc, walk_colors, graph)) {
+                        return false;
+                    }
+                }
 
-                //     // take a walk - if found possible solution language is not empty
-                //     if (expand(init_scc, walk_colors, graph)) return false;
-                // }
-
-                // // all walks failed
-                // return true;
+                // all walks failed
+                return true;
             }
 
             bool expand(State cur_state, ColorSet foundColors, ColorsNfa &scc_graph) {
@@ -270,7 +272,9 @@ namespace mata::nfa
                     StateSet next_states = symbol.targets;
                     for (State next_state : next_states) {
                         // found possible solution language is not empty
-                        if (expand(next_state, foundColors, scc_graph)) return false;
+                        if (expand(next_state, foundColors, scc_graph)) {
+                            return false;
+                        }
 
                     }
                 }
@@ -303,9 +307,15 @@ namespace mata::nfa
 
                         // iterator over transitions
                         for (State s = 0; s < delta.num_of_states(); s++) {
+                            if (state_to_scc.find(s) != state_to_scc.end()) {
+                                continue;
+                            }
                             for (const auto& symbol : delta[s]) {
                                 StateSet targets = symbol.targets;
                                 for (State t : targets) {
+                                    if (state_to_scc.find(t) != state_to_scc.end()) {
+                                        continue;
+                                    }
 
                                     // check if there is connection between two SCCs
                                     if (state_to_scc[s] == i && state_to_scc[t] == j) {
@@ -342,11 +352,11 @@ namespace mata::nfa
 
                 set_accept_formula(cf);
 
-
                 Nfa::concatenate(aut);
 
             }
 
+        //! TODO create better version of trim that uses more data from colors
         ColorsNfa trim() {
             StateRenaming sr;
 
@@ -401,21 +411,6 @@ namespace mata::nfa
             new_nfa.final.clear();
             new_nfa.final.insert(color_state);
 
-            // for (auto color_set : color_vector) {
-            //     for (auto color: color_set) {
-
-            //         if (std::find(found.begin(), found.end(), color) != found.end()) {
-            //             continue;
-            //         }
-
-            //         found.emplace(color);
-
-            //         (*color_state_mapping)[color] = new_nfa.add_state();
-
-            //         new_nfa.final.insert((*color_state_mapping)[color]);
-
-            //     }
-            // }
             // for each color in state's color set add transition to new color state
             for (unsigned ind = 0; ind < this->num_of_states(); ind++) {
                 for (auto color : color_vector[ind]) {
@@ -446,12 +441,16 @@ namespace mata::nfa
         }
     };
 
-
     ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs);
 
     ColorsNfa intersection(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol first_epsilon = EPSILON);
 
     ColorsNfa colors_reduce_simulation(const ColorsNfa& aut, StateRenaming &state_renaming);
 
-    ColorsNfa reduce(const ColorsNfa &aut);
+    ColorsNfa reduce(const ColorsNfa &aut, StateRenaming *state_renaming = nullptr);
+
+    ColorsNfa color_trim(
+        const ColorsNfa& aut, StateRenaming* state_renaming = nullptr,
+        std::optional<std::reference_wrapper<const utils::SparseSet<State>>> initial_states = std::nullopt,
+        std::optional<std::reference_wrapper<const utils::SparseSet<State>>> final_states = std::nullopt);
 }
