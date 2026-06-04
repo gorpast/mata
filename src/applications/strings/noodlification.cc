@@ -95,7 +95,7 @@ std::vector<mata::nfa::ColorsNfa> get_segment_colors(std::vector<mata::nfa::Nfa>
     for (size_t ind = 0; ind < segments.size(); ind++) {
         mata::nfa::ColorsNfa cseg = mata::nfa::ColorsNfa(segments[ind], mata::nfa::ColorFormula());
 
-        cseg.inherit_colors(product);
+        // cseg.inherit_colors(product);
 
         color_segments.push_back(cseg);
     }

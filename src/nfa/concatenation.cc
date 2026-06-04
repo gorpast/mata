@@ -15,11 +15,11 @@ Nfa concatenate(const Nfa& lhs, const Nfa& rhs, const bool use_epsilon,
     return algorithms::concatenate_eps(lhs, rhs, EPSILON, use_epsilon, lhs_state_renaming, rhs_state_renaming);
 }
 
-ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs) {
+ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol epsilon) {
     StateRenaming lhs_state_renaming;
     StateRenaming rhs_state_renaming;
 
-    ColorsNfa cf = ColorsNfa(algorithms::concatenate_eps(lhs, rhs, EPSILON, true, &lhs_state_renaming, &rhs_state_renaming), ColorFormula());
+    ColorsNfa cf = ColorsNfa(algorithms::concatenate_eps(lhs, rhs, epsilon, true, &lhs_state_renaming, &rhs_state_renaming), ColorFormula());
 
     //! again ignoring accepting formula for the small automaton
     for (auto state_pair: lhs_state_renaming) {

@@ -85,4 +85,63 @@ namespace mata::nfa {
 
         return new_colors;
     }
+
+    //! I hate myself for once again copying code, but need just a small tweek to the logic
+    ColorsNfa remove_epsilon_color(const ColorsNfa& aut, Symbol epsilon) {
+        // cannot use multimap, because it can contain multiple occurrences of (a -> a), (a -> a)
+        std::unordered_map<State, StateSet> epsilon_closure;
+
+        // TODO: grossly inefficient
+        // first we compute the epsilon closure
+        const size_t num_of_states{aut.num_of_states() };
+        for (size_t i{ 0 }; i < num_of_states; ++i) {
+            for (const auto& trans : aut.delta[i]) {
+                const auto [it, inserted] = epsilon_closure.insert({ i, { i } });
+                if (trans.symbol == epsilon) {
+                    StateSet& closure = it->second;
+                    // TODO: Fix possibly insert to OrdVector. Create list already ordered, then merge (do not need to resize each time);
+                    closure.insert(trans.targets);
+                }
+            }
+        }
+
+        bool changed = true;
+        while (changed) { // Compute the fixpoint.
+            changed = false;
+            for (size_t i = 0; i < num_of_states; ++i) {
+                const StatePost& post{ aut.delta[i] };
+                //TODO: make faster if default epsilon
+                if (const auto eps_move_it{ post.find(epsilon) }; eps_move_it != post.end()) {
+                    StateSet& src_eps_cl = epsilon_closure[i];
+                    for (const State tgt : eps_move_it->targets) {
+                        const StateSet& tgt_eps_cl = epsilon_closure[tgt];
+                        for (const State st: tgt_eps_cl) {
+                            if (src_eps_cl.count(st) == 0) {
+                                changed = true;
+                                break;
+                            }
+                        }
+                        src_eps_cl.insert(tgt_eps_cl);
+                    }
+                }
+            }
+        }
+
+        // Construct the automaton without epsilon transitions.
+        Nfa result_nfa{ Delta{}, aut.initial, aut.final, aut.alphabet };
+        ColorsNfa result = ColorsNfa(result_nfa, aut.get_accept_formula(), aut.get_color_vector());
+        for (const auto& [state, closure_states] : epsilon_closure) {
+            for (const State eps_cl_state : closure_states) {
+                if (aut.final[eps_cl_state]) result.final.insert(state);
+                for (const SymbolPost& move : aut.delta[eps_cl_state]) {
+                    if (move.symbol == epsilon) continue;
+                    // TODO: this could be done more efficiently if we had a better add method
+                    for (const State tgt_state : move.targets) {
+                        result.delta.add(state, move.symbol, tgt_state);
+                    }
+                }
+            }
+        }
+        return result;
+        }
 }

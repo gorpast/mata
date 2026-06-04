@@ -202,6 +202,10 @@ namespace mata::nfa
                 return color_vector[src];
             }
 
+            std::vector<ColorSet> get_color_vector() const {
+                return color_vector;
+            }
+
             void resize_color_vector() {
                 color_vector.resize(this->num_of_states());
             }
@@ -341,7 +345,8 @@ namespace mata::nfa
             //! for now its okay but will change later
             void concatenate(const ColorsNfa& aut) {
                 // to concatenate color nfas, just append color vectors
-                color_vector.insert(this->color_vector.end(), aut.color_vector.begin(), aut.color_vector.end());
+                resize_color_vector();
+                color_vector.insert(color_vector.end(), aut.color_vector.begin(), aut.color_vector.end());
 
                 // TODO what to do with formulas
                 // now the automat must do both formulas
@@ -352,7 +357,48 @@ namespace mata::nfa
 
                 set_accept_formula(cf);
 
-                Nfa::concatenate(aut);
+                // Nfa::concatenate(aut);
+                // const size_t n = this->num_of_states();
+                // auto upd_fnc = [&](const State st) {
+                //     return st + n;
+                // };
+
+                // // copy the information about aut to save the case when this is the same object as aut.
+                // utils::SparseSet<mata::nfa::State> aut_initial = aut.initial;
+                // utils::SparseSet<mata::nfa::State> aut_final = aut.final;
+                // const size_t aut_n = aut.num_of_states();
+
+                // this->delta.allocate(n);
+                // this->delta.append(aut.delta.renumber_targets(upd_fnc));
+
+                // // set accepting states
+                // utils::SparseSet<State> new_fin{};
+                // new_fin.reserve(n+aut_n);
+                // for(const State& aut_fin : aut_final) {
+                //     new_fin.insert(upd_fnc(aut_fin));
+                // }
+
+                // // connect both parts
+                // for(const State& ini : aut_initial) {
+                //     const StatePost& ini_post = this->delta[upd_fnc(ini)];
+                //     // is ini state also final?
+                //     const bool is_final = aut_final[ini];
+                //     for(const State& fin : this->final) {
+                //         if(is_final) {
+                //             new_fin.insert(fin);
+                //         }
+                //         for(const SymbolPost& ini_mv : ini_post) {
+                //             // TODO: this should be done efficiently in a delta method
+                //             // TODO: in fact it is not efficient for now
+                //             for(const State& dest : ini_mv.targets) {
+                //                 std::cout << dest << " dest there\n";
+                //                 this->delta.add(fin, ini_mv.symbol, dest);
+                //                 add_color_to_current(fin, aut.get_color_set(ini));
+                //             }
+                //         }
+                //     }
+                // }
+                // this->final = new_fin;
 
             }
 
@@ -441,7 +487,7 @@ namespace mata::nfa
         }
     };
 
-    ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs);
+    ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol epsilon = EPSILON);
 
     ColorsNfa intersection(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol first_epsilon = EPSILON);
 
@@ -453,4 +499,6 @@ namespace mata::nfa
         const ColorsNfa& aut, StateRenaming* state_renaming = nullptr,
         std::optional<std::reference_wrapper<const utils::SparseSet<State>>> initial_states = std::nullopt,
         std::optional<std::reference_wrapper<const utils::SparseSet<State>>> final_states = std::nullopt);
+
+    ColorsNfa remove_epsilon_color(const ColorsNfa& aut, Symbol epsilon = EPSILON);
 }
