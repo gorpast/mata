@@ -669,6 +669,9 @@ public:
      */
     std::optional<Word> get_word(std::optional<Symbol> first_epsilon = EPSILON) const;
 
+    /// Returns one of the shortest words of @p aut 
+    std::optional<mata::Word> get_shortest_word(const mata::nfa::Nfa& aut);
+
     /**
      * @brief Get any arbitrary accepted word in the language of the complement of the automaton.
      *
@@ -874,6 +877,18 @@ Nfa intersection(const Nfa& lhs, const Nfa& rhs,
 // TODO: check how fast is using just concatenate over epsilon and then call remove_epsilon().
 Nfa concatenate(const Nfa& lhs, const Nfa& rhs, bool use_epsilon = false,
                 StateRenaming* lhs_state_renaming = nullptr, StateRenaming* rhs_state_renaming = nullptr);
+
+/**
+ * @brief Compute NFA by concatenating @p nfa_to_concatenate with itself @p power times.
+ *
+ * Uses exponentiation by squaring for efficiency. The result accepts the language L^power,
+ * where L is the language of the input automaton.
+ *
+ * @param[in] nfa_to_concatenate NFA to concatenate with itself.
+ * @param[in] power The nth power (number of times to concatenate).
+ * @return NFA accepting the nth power of the input language.
+ */
+Nfa concatenate_nth_power(Nfa nfa_to_concatenate, unsigned power);
 
 /**
  * @brief Compute automaton accepting complement of @p aut.
