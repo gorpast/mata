@@ -13,10 +13,10 @@
 namespace mata::nfa
 {
 
-    using ColorNum = int;
+    using ColorNum = unsigned int;
     using ColorSet = std::set<ColorNum>;
     // TODO global constant change
-    constexpr ColorNum invalidColorNum = -1;
+    constexpr ColorNum invalidColorNum = std::numeric_limits<ColorNum>::max();
 
     class ColorFormula {
         public:
@@ -126,7 +126,7 @@ namespace mata::nfa
                     if (children.size() == 0) {
                         return ColorFormula(OperatorType::False);
                     }
-                    for (int ind = 0; ind < children.size(); ind++) {
+                    for (size_t ind = 0; ind < children.size(); ind++) {
                         ColorFormula new_child = children[ind].trim_formula(active_colors);
                         if(new_child.ops == OperatorType::False) return ColorFormula(OperatorType::False);
                         children[ind] = new_child;
@@ -136,7 +136,7 @@ namespace mata::nfa
                     if (children.size() == 0) {
                         return ColorFormula(OperatorType::False);
                     }
-                    for (int ind = 0; ind < children.size(); ind++) {
+                    for (size_t ind = 0; ind < children.size(); ind++) {
                         ColorFormula new_child = children[ind].trim_formula(active_colors);
                         if(new_child.ops == OperatorType::True) return ColorFormula(OperatorType::True);
                         children[ind] = new_child;
@@ -417,7 +417,7 @@ namespace mata::nfa
         }
 
         void inherit_colors(ColorsNfa source) {
-            for (int s = 0; s < num_of_states(); s++) {
+            for (size_t s = 0; s < num_of_states(); s++) {
                 add_color_to_current(s, source.get_color_set(s));
             }
         }
@@ -426,7 +426,7 @@ namespace mata::nfa
         std::string print_to_mata() const {
             std::string format_string = Nfa::print_to_mata();
             format_string += "Colors:\n"; // new line between automaton and its colors
-            for (int ind = 0; ind < num_of_states(); ind++) {
+            for (size_t ind = 0; ind < num_of_states(); ind++) {
                 std::string color_string = "";
                 for (auto col : color_vector[ind]) {
                     color_string += std::to_string(col) + " ";
@@ -471,7 +471,7 @@ namespace mata::nfa
         std::string print_to_dot() const {
             std::string format_string = Nfa::print_to_dot();
             format_string += "Colors:\n"; // new line between automaton and its colors
-            for (int ind = 0; ind < num_of_states(); ind++) {
+            for (size_t ind = 0; ind < num_of_states(); ind++) {
                 std::string color_string = "";
                 for (auto col : color_vector[ind]) {
                     color_string += std::to_string(col) + " ";

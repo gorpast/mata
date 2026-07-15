@@ -1,15 +1,71 @@
 #include "mata/nfa/algorithms.hh"
 #include "mata/nfa/colors.hh"
+#include "mata/nfa/simulation.hh"
+
+#include <vector>
+#include <algorithm>
 
 
 namespace mata::nfa {
+
+    Nfa colors_new_simulation_reduce(Nfa &nfa, StateRenaming &state_renaming) {
+
+        std::cout << "Hello simulation\n" << nfa.print_to_dot() << std::endl;
+        auto simulation = simulation::Simulation(nfa).compute_simulation();
+        std::cout << "Computed simulation\n";
+
+        Nfa new_nfa = Nfa();
+
+        // TODO should change this transition handling
+        std::vector<State> states_to_get_transitions = {};
+
+        // TODO don't know if can loop through states like this
+        for (State state = 0; state < nfa.num_of_states(); state++) {
+            // TODO is my own state in equi_st??
+            std::vector<State> equi_st = simulation.partition_block(state);
+
+            //! WRONG STRATEGY should chnage:
+            // when I first see the given partition I add a new state to reduced Nfa
+            // will see if it is first when the minimum state in equi_st is my `state` variable
+            State minimum = *std::min_element(equi_st.begin(), equi_st.end());
+            if (minimum >= state) {
+                State new_state = new_nfa.add_state();
+
+                state_renaming[state] = new_state;
+
+                states_to_get_transitions.push_back(state);
+            } else {
+                state_renaming[state] = state_renaming.at(minimum);
+            }
+        }
+
+        //! find better way to do it
+        for (State state: states_to_get_transitions) {
+            StatePost st_post = nfa.delta[state];
+            // loop through its transitions and add these transition to the new_nfa
+
+            for (auto symbol: st_post) {
+                for (State target: symbol.targets) {
+
+                    new_nfa.delta.add(state_renaming[state], symbol.symbol, state_renaming[target]);
+                }
+            }
+        }
+
+        return new_nfa;
+
+    }
 
     ColorsNfa colors_reduce_simulation(const ColorsNfa& aut, StateRenaming &state_renaming) {
         State first_color_state;
 
         Nfa simulation_nfa = aut.unwind_colors(first_color_state);
 
-        Nfa new_nfa = mata::nfa::algorithms::reduce_simulation(simulation_nfa, state_renaming);
+        std::cout << "before simulation\n" << simulation_nfa.print_to_dot() << std::endl;
+        Nfa new_nfa = colors_new_simulation_reduce(simulation_nfa, state_renaming);
+        // Nfa new_nfa = mata::nfa::algorithms::reduce_simulation(simulation_nfa, state_renaming);
+
+        std::cout << "After simulation\n" << new_nfa.print_to_dot() << std::endl;
 
         ColorsNfa new_colors_nfa = ColorsNfa(new_nfa, aut.get_accept_formula());
 
