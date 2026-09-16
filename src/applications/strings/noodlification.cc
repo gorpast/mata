@@ -93,7 +93,7 @@ std::vector<mata::nfa::ColorsNfa> get_segment_colors(std::vector<mata::nfa::Nfa>
     //!  I am working with the ASSUMPTION that the segment still inherit original state numbers from the product
     std::vector<mata::nfa::ColorsNfa> color_segments = {};
     for (size_t ind = 0; ind < segments.size(); ind++) {
-        mata::nfa::ColorsNfa cseg = mata::nfa::ColorsNfa(segments[ind], mata::nfa::ColorFormula());
+        mata::nfa::ColorsNfa cseg = mata::nfa::ColorsNfa(segments[ind]);
 
         // cseg.inherit_colors(product);
 

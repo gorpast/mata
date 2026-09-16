@@ -20,7 +20,7 @@ ColorsNfa concatenate(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol e
     StateRenaming lhs_state_renaming;
     StateRenaming rhs_state_renaming;
 
-    ColorsNfa cf = ColorsNfa(algorithms::concatenate_eps(lhs, rhs, epsilon, true, &lhs_state_renaming, &rhs_state_renaming), ColorFormula());
+    ColorsNfa cf = ColorsNfa(algorithms::concatenate_eps(lhs, rhs, epsilon, true, &lhs_state_renaming, &rhs_state_renaming));
 
     //! again ignoring accepting formula for the small automaton
     for (auto state_pair: lhs_state_renaming) {
@@ -38,7 +38,8 @@ ColorsNfa intersection(const ColorsNfa& lhs, const ColorsNfa& rhs, const Symbol 
     std::unordered_map<std::pair<State, State>, State>  prod_map;
     Nfa nfa = product(lhs, rhs, ProductFinalStateCondition::And, first_epsilon, &prod_map);
 
-    ColorsNfa cf = ColorsNfa(nfa, ColorFormula());
+    //! BUG at first there should be true as ColorFormula
+    ColorsNfa cf = ColorsNfa(nfa, ColorFormula(ColorFormula::OperatorType::True));
 
     // map colors to product
     for (auto state_map: prod_map) {

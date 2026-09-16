@@ -61,11 +61,11 @@ namespace mata::nfa {
 
         Nfa simulation_nfa = aut.unwind_colors(first_color_state);
 
-        std::cout << "before simulation\n" << simulation_nfa.print_to_dot() << std::endl;
+        // std::cout << "before simulation\n" << simulation_nfa.print_to_dot() << std::endl;
         Nfa new_nfa = colors_new_simulation_reduce(simulation_nfa, state_renaming);
         // Nfa new_nfa = mata::nfa::algorithms::reduce_simulation(simulation_nfa, state_renaming);
 
-        std::cout << "After simulation\n" << new_nfa.print_to_dot() << std::endl;
+        // std::cout << "After simulation\n" << new_nfa.print_to_dot() << std::endl;
 
         ColorsNfa new_colors_nfa = ColorsNfa(new_nfa, aut.get_accept_formula());
 
@@ -133,7 +133,7 @@ namespace mata::nfa {
         }
 
         Nfa nfa = trim(aut, state_renaming, initial_states, final_states);
-        ColorsNfa new_colors = ColorsNfa(nfa, ColorFormula());
+        ColorsNfa new_colors = ColorsNfa(nfa);
 
         for (auto pair: sr) {
             new_colors.add_color_to_current(pair.second, aut.get_color_set(pair.first));
@@ -141,6 +141,59 @@ namespace mata::nfa {
 
         return new_colors;
     }
+
+    // ColorsNfa better_color_trim(
+    //     const ColorsNfa& aut, StateRenaming* state_renaming,
+    //     std::optional<std::reference_wrapper<const utils::SparseSet<State>>> initial_states,
+    //     std::optional<std::reference_wrapper<const utils::SparseSet<State>>> final_states) {
+
+    //     if (!initial_states) { initial_states = aut.initial; }
+    //     if (!final_states) { final_states = aut.final; }
+
+    //     StateRenaming sr;
+    //     if (state_renaming == nullptr) {
+    //         state_renaming = &sr;
+    //     }
+
+    //     // setting callback for tarjan SCC
+    //     std::unordered_map<State, State> state_to_scc;
+
+    //     State current_scc = 0;
+
+    //     Nfa::TarjanDiscoverCallback cb;
+
+    //     cb.scc_discover = [&](const std::vector<State>& scc,
+    //                         const std::vector<State>& /*stack*/) {
+    //         for (State s : scc) {
+    //             state_to_scc[s] = current_scc;
+    //         }
+    //         current_scc++;
+    //         return false;
+    //     };
+
+    //     // state_to_scc should have mapping between SCCs and states of Nfa
+    //     tarjan_scc_discover(cb);
+
+    //     ColorsNfa graph = create_scc_graph(state_to_scc, current_scc);
+
+    //     // TODO probably good idea to connect all initial states
+    //     // get initial SCCs
+    //     std::set<State> initial_scc = get_initial_sccs(state_to_scc);
+
+    //     // start the algorithm
+    //     for (State init_scc: initial_scc) {
+    //         ColorSet walk_colors = {};
+
+    //         // take a walk - if found possible solution language is not empty
+    //         if (expand(init_scc, walk_colors, graph)) {
+    //             return false;
+    //         }
+    //     }
+
+    //     // all walks failed
+    //     return true;
+
+    // }
 
     //! I hate myself for once again copying code, but need just a small tweek to the logic
     ColorsNfa remove_epsilon_color(const ColorsNfa& aut, Symbol epsilon) {

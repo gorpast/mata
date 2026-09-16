@@ -161,13 +161,13 @@ namespace mata::nfa
 
         public:
             // TODO do something with this 
-            explicit ColorsNfa(const size_t num_of_states, ColorFormula accept_formula, std::vector<ColorSet> input_color_vector = {}, utils::SparseSet<State> initial_states = {},
+            explicit ColorsNfa(const size_t num_of_states, ColorFormula accept_formula = ColorFormula(ColorFormula::OperatorType::True), std::vector<ColorSet> input_color_vector = {}, utils::SparseSet<State> initial_states = {},
                     utils::SparseSet<State> final_states = {}, Alphabet* alphabet = nullptr)
                 : Nfa(num_of_states, initial_states, final_states, alphabet), accept_formula(accept_formula), color_vector(input_color_vector) {
                     color_vector.resize(num_of_states + 1);
                 }
 
-            explicit ColorsNfa(Nfa nfa, ColorFormula accept_formula, std::vector<ColorSet> input_color_vector = {})
+            explicit ColorsNfa(Nfa nfa, ColorFormula accept_formula = ColorFormula(ColorFormula::OperatorType::True), std::vector<ColorSet> input_color_vector = {})
                 : Nfa(nfa), accept_formula(accept_formula), color_vector(input_color_vector) {
                     color_vector.resize(nfa.num_of_states() + 1);
                 }
@@ -221,6 +221,18 @@ namespace mata::nfa
 
             ColorFormula get_accept_formula() const {
                 return accept_formula;
+            }
+
+            void remove_color_state(State state_to_remove) {
+
+                for (const auto& symbol : delta[state_to_remove]) {
+                    StateSet next_states = symbol.targets;
+                    for (State next_state : next_states) {
+
+                        delta.remove(state_to_remove, symbol.symbol, next_state);
+                    }
+                }
+
             }
 
             bool is_lang_empty(void) {
@@ -283,6 +295,7 @@ namespace mata::nfa
                     }
                 }
 
+                // TODO shouldn't be there false
                 return true;
 
             }
@@ -294,6 +307,15 @@ namespace mata::nfa
                 }
 
                 return initial_sccs;
+            }
+
+            std::set<State> get_final_sccs(std::unordered_map<State, State> state_to_scc) {
+                std::set<State> final_sccs = {};
+                for (State s: final) {
+                    final_sccs.insert(state_to_scc[s]);
+                }
+
+                return final_sccs;
             }
 
             ColorsNfa create_scc_graph(std::unordered_map<State, State> state_to_scc, State num_scc) {
@@ -403,17 +425,116 @@ namespace mata::nfa
             }
 
         //! TODO create better version of trim that uses more data from colors
-        ColorsNfa trim() {
+        ColorsNfa def_trim() {
             StateRenaming sr;
 
             Nfa nfa = Nfa::trim(&sr);
-            ColorsNfa new_colors = ColorsNfa(nfa, ColorFormula());
+            ColorsNfa new_colors = ColorsNfa(nfa);
 
             for (auto pair: sr) {
                 new_colors.add_color_to_current(pair.second, color_vector[pair.first]);
             }
 
             return new_colors;
+        }
+
+        void expand_trim(State cur_state, std::vector<ColorSet> &foundColors, ColorsNfa &scc_graph) {
+            // adding colors to the found set
+            foundColors[cur_state].merge(scc_graph.color_vector[cur_state]);
+
+            // leaf node of scc_graph
+            if (scc_graph.delta[cur_state].size() == 0) {
+                return;
+            }
+
+            // loop through all successors of the node
+            for (const auto& symbol : scc_graph.delta[cur_state]) {
+                StateSet next_states = symbol.targets;
+                for (State next_state : next_states) {
+                    foundColors[next_state].merge(scc_graph.color_vector[cur_state]);
+                    expand_trim(next_state, foundColors, scc_graph);
+                }
+            }
+
+            return;
+        }
+
+        void remove_scc_states(State cur_state, std::unordered_map<State, State> &state_to_scc) {
+
+            for (const auto &state_pair: state_to_scc) {
+
+                // if state in cur state that should be removed
+                if (state_pair.second == cur_state) {
+                    remove_color_state(state_pair.first);
+                }
+            }
+        }
+
+        ColorsNfa /*better_*/trim() {
+            // setting callback for tarjan SCC
+            std::unordered_map<State, State> state_to_scc;
+
+            State total_scc = 0;
+
+            TarjanDiscoverCallback cb;
+
+            cb.scc_discover = [&](const std::vector<State>& scc,
+                                const std::vector<State>& /*stack*/) {
+                for (State s : scc) {
+                    state_to_scc[s] = total_scc;
+                }
+                total_scc++;
+                return false;
+            };
+
+            // state_to_scc should have mapping between SCCs and states of Nfa
+            tarjan_scc_discover(cb);
+
+            ColorsNfa graph = create_scc_graph(state_to_scc, total_scc);
+
+            // TODO probably good idea to connect all initial states
+            // get initial SCCs
+            std::set<State> initial_scc = get_initial_sccs(state_to_scc);
+
+            std::vector<ColorSet> foundColorScc{};
+
+            foundColorScc.resize(total_scc);
+
+            // start the front step of the algorithm
+            for (State init_scc: initial_scc) {
+
+                expand_trim(init_scc, foundColorScc, graph);
+            }
+
+            // do the same but now for graph with inverted edges
+            // TODO need to find whether the node names stay the same
+            // or If I need to implement color version of revert
+            Nfa reverted_tmp = revert(graph);
+            ColorsNfa reverted = ColorsNfa(reverted_tmp, graph.accept_formula, graph.color_vector);
+
+            std::set<State> reverted_initial_scc = get_final_sccs(state_to_scc);
+
+            for (State init_scc: reverted_initial_scc) {
+
+                expand_trim(init_scc, foundColorScc, reverted);
+            }
+
+            std::vector<bool> is_useful(total_scc, true);
+
+            // now check if the formula for given state can be satisfied
+            // TODO maybe should do a little bit more iterations of the algorithm to get rid of next part that could be created
+            for (State state = 0; state < total_scc; state++) {
+
+                if (!accept_formula.get_truth_value(foundColorScc[state], {})) {
+                    is_useful[state] = false;
+                    remove_scc_states(state, state_to_scc);
+                }
+
+            }
+
+            // I removed unnecessary states of the color automaton
+            // TODO should 
+            return def_trim();
         }
 
         void inherit_colors(ColorsNfa source) {
