@@ -1,6 +1,7 @@
 #include "mata/nfa/algorithms.hh"
 #include "mata/nfa/colors.hh"
 #include "mata/nfa/simulation.hh"
+#include "mata/utils/partition.hh"
 
 #include <vector>
 #include <algorithm>
@@ -8,16 +9,69 @@
 
 namespace mata::nfa {
 
-    Nfa colors_new_simulation_reduce(Nfa &nfa, StateRenaming &state_renaming) {
+    mata::utils::Partition get_init_partition(const ColorsNfa &colors_nfa, unsigned *num_blocks) {
 
-        std::cout << "Hello simulation\n" << nfa.print_to_dot() << std::endl;
-        auto simulation = simulation::Simulation(nfa).compute_simulation();
-        std::cout << "Computed simulation\n";
+        mata::utils::StateBlocks same_color_vectors = {};
+        *num_blocks = 0;
+
+        bool first_seen = false;
+
+        // now loop through all the states and add them to correct color_vectors
+        // TODO dont know if this is correct, not sure with anything
+        // for each state decide where to put it
+        for (State state = 0; state < colors_nfa.num_of_states(); state++) {
+            auto cur_state_colors = colors_nfa.get_color_set(state);
+
+            first_seen = true;
+            // compare state's colors with colors of different groups
+            for (auto block: same_color_vectors) {
+                auto representant_state_colors = colors_nfa.get_color_set(block.at(0));
+
+                if (cur_state_colors == representant_state_colors) {  // this comparison works for sets
+                    block.push_back(state);
+
+                    first_seen = false;
+
+                    break;
+                }
+            }
+
+            if (first_seen) {
+                (*num_blocks)++;
+                same_color_vectors.push_back({state});
+            }
+        }
+
+        return mata::utils::Partition(colors_nfa.num_of_states(), same_color_vectors);
+    }
+
+    // this function creates simulation with every color state added to its partition group based on colors it has
+    // full vectors of colors has to correspond in order to be put to different blocks
+    simulation::Simulation get_simulation_colors(const ColorsNfa &colors_nfa) {
+
+        unsigned num_blocks = 1;
+        mata::utils::Partition init_part = mata::utils::Partition(colors_nfa.num_of_states());//get_init_partition(colors_nfa, &num_blocks); 
+        mata::utils::Relation init_rel = mata::utils::Relation(colors_nfa.num_of_states(), num_blocks);
+        for (size_t i = 0; i < num_blocks; i++) {
+            init_rel.set(i, i, true);
+        }
+        std::cout << num_blocks << std::endl;
+
+        return simulation::Simulation(colors_nfa/*, init_part, init_rel*/);
+    }
+ 
+
+    ColorsNfa colors_new_simulation_reduce(const ColorsNfa &nfa, StateRenaming &state_renaming) {
+
+        auto simulation = get_simulation_colors(nfa).compute_simulation();
+        std::cout << "this is ok\n";
 
         Nfa new_nfa = Nfa();
 
         // TODO should change this transition handling
         std::vector<State> states_to_get_transitions = {};
+
+        std::vector<ColorSet> color_vec = {};
 
         // TODO don't know if can loop through states like this
         for (State state = 0; state < nfa.num_of_states(); state++) {
@@ -32,6 +86,10 @@ namespace mata::nfa {
                 State new_state = new_nfa.add_state();
 
                 state_renaming[state] = new_state;
+                // TODO unnecessary creating new color_vec
+                // //+ dont know if not problem with indexing outside color_vec size
+                // okay now dont know if new_state will always be +1
+                color_vec.push_back(nfa.get_color_set(state));
 
                 states_to_get_transitions.push_back(state);
             } else {
@@ -52,60 +110,62 @@ namespace mata::nfa {
             }
         }
 
-        return new_nfa;
-
+        ColorsNfa color_new_nfa = ColorsNfa(new_nfa, nfa.get_accept_formula(), color_vec);
+        return color_new_nfa;
     }
 
     ColorsNfa colors_reduce_simulation(const ColorsNfa& aut, StateRenaming &state_renaming) {
         State first_color_state;
 
-        Nfa simulation_nfa = aut.unwind_colors(first_color_state);
+        // Nfa simulation_nfa = aut.unwind_colors(first_color_state);
 
         // std::cout << "before simulation\n" << simulation_nfa.print_to_dot() << std::endl;
-        Nfa new_nfa = colors_new_simulation_reduce(simulation_nfa, state_renaming);
+        // Nfa new_nfa = colors_new_simulation_reduce(simulation_nfa, state_renaming);
+        ColorsNfa new_nfa = colors_new_simulation_reduce(aut, state_renaming);
         // Nfa new_nfa = mata::nfa::algorithms::reduce_simulation(simulation_nfa, state_renaming);
 
         // std::cout << "After simulation\n" << new_nfa.print_to_dot() << std::endl;
 
         ColorsNfa new_colors_nfa = ColorsNfa(new_nfa, aut.get_accept_formula());
 
-        std::vector<State> renaming = {};
-        BoolVector is_staying = {};
-        long unsigned counter = 0;
+        // std::vector<State> renaming = {};
+        // BoolVector is_staying = {};
+        // long unsigned counter = 0;
 
-        for (State state = 0; state < new_colors_nfa.num_of_states(); state++) {
-            // TODO will get all the color states get mapped to bigger number?
-            if (state >= state_renaming[first_color_state]) {
-                renaming.push_back(counter++);
-                is_staying.push_back(0);
-                new_colors_nfa.final.erase(state);
-                continue;
-            }
-            renaming.push_back(counter++);
-            is_staying.push_back(1);
+        // for (State state = 0; state < new_colors_nfa.num_of_states(); state++) {
+        //     // TODO will get all the color states get mapped to bigger number?
+        //     if (state >= state_renaming[first_color_state]) {
+        //         renaming.push_back(counter++);
+        //         is_staying.push_back(0);
+        //         new_colors_nfa.final.erase(state);
+        //         continue;
+        //     }
+        //     renaming.push_back(counter++);
+        //     is_staying.push_back(1);
 
-        }
+        // }
         
-        // passing colors back to the state
-        for (auto rename_pair : state_renaming) {
-            // want to ignore color states that were added to preserve structure
-            if (rename_pair.second >= state_renaming[first_color_state]) {
-                continue;
-            }
-            new_colors_nfa.add_color_to_current(rename_pair.second, aut.get_color_set(rename_pair.first));
+        // // passing colors back to the state
+        // for (auto rename_pair : state_renaming) {
+        //     // want to ignore color states that were added to preserve structure
+        //     if (rename_pair.second >= state_renaming[first_color_state]) {
+        //         continue;
+        //     }
+        //     new_colors_nfa.add_color_to_current(rename_pair.second, aut.get_color_set(rename_pair.first));
 
-            if (std::find(aut.final.begin(), aut.final.end(), rename_pair.first) != aut.final.end()) {
-                new_colors_nfa.final.insert(rename_pair.second);
-            }
-        }
+        //     if (std::find(aut.final.begin(), aut.final.end(), rename_pair.first) != aut.final.end()) {
+        //         new_colors_nfa.final.insert(rename_pair.second);
+        //     }
+        // }
 
-        new_colors_nfa.final.truncate();
+        // new_colors_nfa.final.truncate();
 
-        new_colors_nfa.delta = new_colors_nfa.delta.defragment(is_staying, renaming);
+        // new_colors_nfa.delta = new_colors_nfa.delta.defragment(is_staying, renaming);
 
-        new_colors_nfa.resize_color_vector();
+        // new_colors_nfa.resize_color_vector();
 
-        return new_colors_nfa;
+        // return new_colors_nfa;
+        return new_nfa;
     }
 
     ColorsNfa reduce(const ColorsNfa &aut, StateRenaming *state_renaming) {
