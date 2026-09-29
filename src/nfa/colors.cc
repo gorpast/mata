@@ -57,6 +57,7 @@ namespace mata::nfa {
         }
         std::cout << num_blocks << std::endl;
 
+        // TODO uncomment this init_part ...
         return simulation::Simulation(colors_nfa/*, init_part, init_rel*/);
     }
  

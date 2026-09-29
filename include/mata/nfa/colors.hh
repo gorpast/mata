@@ -333,15 +333,9 @@ namespace mata::nfa
 
                         // iterator over transitions
                         for (State s = 0; s < delta.num_of_states(); s++) {
-                            if (state_to_scc.find(s) != state_to_scc.end()) {
-                                continue;
-                            }
                             for (const auto& symbol : delta[s]) {
                                 StateSet targets = symbol.targets;
                                 for (State t : targets) {
-                                    if (state_to_scc.find(t) != state_to_scc.end()) {
-                                        continue;
-                                    }
 
                                     // check if there is connection between two SCCs
                                     if (state_to_scc[s] == i && state_to_scc[t] == j) {
@@ -429,7 +423,7 @@ namespace mata::nfa
             StateRenaming sr;
 
             Nfa nfa = Nfa::trim(&sr);
-            ColorsNfa new_colors = ColorsNfa(nfa);
+            ColorsNfa new_colors = ColorsNfa(nfa, accept_formula);
 
             for (auto pair: sr) {
                 new_colors.add_color_to_current(pair.second, color_vector[pair.first]);
@@ -438,9 +432,10 @@ namespace mata::nfa
             return new_colors;
         }
 
-        void expand_trim(State cur_state, std::vector<ColorSet> &foundColors, ColorsNfa &scc_graph) {
+        void expand_trim(State cur_state, std::vector<ColorSet> &foundColors, ColorsNfa scc_graph) {
             // adding colors to the found set
-            foundColors[cur_state].merge(scc_graph.color_vector[cur_state]);
+            // TODO maybe need to initialize it somewhere else
+            foundColors[cur_state].insert(scc_graph.color_vector[cur_state].begin(), scc_graph.color_vector[cur_state].end());
 
             // leaf node of scc_graph
             if (scc_graph.delta[cur_state].size() == 0) {
@@ -451,7 +446,8 @@ namespace mata::nfa
             for (const auto& symbol : scc_graph.delta[cur_state]) {
                 StateSet next_states = symbol.targets;
                 for (State next_state : next_states) {
-                    foundColors[next_state].merge(scc_graph.color_vector[cur_state]);
+                    foundColors[next_state].insert(scc_graph.color_vector[cur_state].begin(), scc_graph.color_vector[cur_state].end());
+
                     expand_trim(next_state, foundColors, scc_graph);
                 }
             }

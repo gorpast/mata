@@ -26,7 +26,7 @@ TEST_CASE("ColorsNfa::is_empty_lang() - basic false") {
     Word one_char_word = {0};
 
     ColorFormula acceptF = ColorFormula(ColorFormula::OperatorType::Occurs, occurColor);
-    ColorsNfa c_nfa = ColorsNfa(num_states,acceptF, {}, {0});
+    ColorsNfa c_nfa = ColorsNfa(num_states,acceptF, {}, {0}, {2});
 
     c_nfa.add_colors_to_state(0, {1});
     c_nfa.add_colors_to_state(1, {2,0});
@@ -44,7 +44,7 @@ TEST_CASE("ColorsNfa::is_empty_lang() - basic true") {
     Word one_char_word = {0};
 
     ColorFormula acceptF = ColorFormula(ColorFormula::OperatorType::Occurs, occurColor);
-    ColorsNfa c_nfa = ColorsNfa(num_states,acceptF, {}, {0});
+    ColorsNfa c_nfa = ColorsNfa(num_states,acceptF, {}, {0}, {2});
 
     c_nfa.add_colors_to_state(0, {1});
     c_nfa.add_colors_to_state(1, {2,0});
@@ -54,4 +54,26 @@ TEST_CASE("ColorsNfa::is_empty_lang() - basic true") {
     c_nfa.insert_word(1, one_char_word, 2);
 
     CHECK(c_nfa.is_lang_empty() == true);
+}
+
+TEST_CASE("ColorsNfa::trim - basic example") {
+
+    ColorFormula acceptF = ColorFormula(ColorFormula::OperatorType::Occurs, 1);
+    ColorsNfa c_nfa = ColorsNfa(5, acceptF, {}, {0}, {4});
+
+    Word one_char_word = {0};
+
+    c_nfa.add_colors_to_state(3, {1});
+
+    c_nfa.insert_word(0, one_char_word, 1);
+    c_nfa.insert_word(0, one_char_word, 2);
+    c_nfa.insert_word(1, one_char_word, 4);
+    c_nfa.insert_word(2, one_char_word, 3);
+    c_nfa.insert_word(2, one_char_word, 4);
+    c_nfa.insert_word(3, one_char_word, 2);
+
+    ColorsNfa c_nfa_trim = c_nfa.trim();
+    std::cout << c_nfa_trim.print_to_dot() << std::endl;
+
+    CHECK(c_nfa_trim.num_of_states() == 4);
 }
